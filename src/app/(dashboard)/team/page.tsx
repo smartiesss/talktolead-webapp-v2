@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Header } from "@/components/layout/header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,30 +12,22 @@ import { DataTable } from "@/components/ui/data-table"
 import { ColumnDef } from "@tanstack/react-table"
 import { 
   Search, Plus, ChevronRight, Users, UserCheck, UserX, 
-  Mic, Clock, AlertTriangle
+  Mic, Clock, AlertTriangle, Loader2
 } from "lucide-react"
-import { teamMembers, teamSummary, alerts, getRecordingsByUser, getContactsByUser } from "@/data/dummy"
+import { useSubordinates, useManagerDashboard, useApiError } from "@/lib/api/hooks"
+import { transformSubordinates, transformAlerts } from "@/lib/api/transforms"
+import { teamMembers, teamSummary, alerts as dummyAlerts, getRecordingsByUser, getContactsByUser } from "@/data/dummy"
 import { User } from "@/types"
 import { formatRelativeTime, formatDuration } from "@/lib/utils"
 import Link from "next/link"
 
-// Add activity data to team members
-const teamMembersWithActivity = teamMembers.map((member) => {
-  const summary = teamSummary.byUser.find(u => u.userId === member.id)
-  const memberRecordings = getRecordingsByUser(member.id)
-  const memberContacts = getContactsByUser(member.id)
-  
-  return {
-    ...member,
-    recordings: summary?.recordings ?? memberRecordings.length,
-    duration: summary?.duration ?? memberRecordings.reduce((acc, r) => acc + r.duration, 0),
-    contacts: summary?.contacts ?? memberContacts.length,
-    activityLevel: summary?.activityLevel ?? 'medium',
-    hasAlert: alerts.some(a => a.userId === member.id && !a.isRead),
-  }
-})
-
-type TeamMemberWithActivity = typeof teamMembersWithActivity[0]
+type TeamMemberWithActivity = User & {
+  recordings: number
+  duration: number
+  contacts: number
+  activityLevel: 'high' | 'medium' | 'low' | 'none'
+  hasAlert: boolean
+}
 
 const columns: ColumnDef<TeamMemberWithActivity>[] = [
   {
@@ -136,28 +128,82 @@ export default function TeamPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [activityFilter, setActivityFilter] = useState("all")
 
-  // Filter team members
-  const filteredMembers = teamMembersWithActivity.filter((member) => {
-    const matchesSearch = 
-      member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      member.email.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    const matchesStatus = statusFilter === "all" || member.status === statusFilter
-    const matchesActivity = activityFilter === "all" || member.activityLevel === activityFilter
+  // Fetch real data
+  const { data: subordinatesData, isLoading, error } = useSubordinates()
+  const { data: dashboardData } = useManagerDashboard()
+  const apiError = useApiError(error)
 
-    return matchesSearch && matchesStatus && matchesActivity
-  })
+  // Transform or use dummy data
+  const members = useMemo(() => {
+    if (subordinatesData && subordinatesData.length > 0) {
+      return transformSubordinates(subordinatesData)
+    }
+    return teamMembers
+  }, [subordinatesData])
+
+  const alerts = useMemo(() => {
+    if (dashboardData?.alerts) {
+      return transformAlerts(dashboardData.alerts)
+    }
+    return dummyAlerts
+  }, [dashboardData])
+
+  // Add activity data to team members
+  const teamMembersWithActivity: TeamMemberWithActivity[] = useMemo(() => {
+    return members.map((member) => {
+      // Try to get summary from API data first
+      const summary = dashboardData?.by_user?.find(u => String(u.user_id) === member.id)
+      
+      // Fallback to dummy data calculations
+      const dummySummary = teamSummary.byUser.find(u => u.userId === member.id)
+      const memberRecordings = getRecordingsByUser(member.id)
+      const memberContacts = getContactsByUser(member.id)
+      
+      return {
+        ...member,
+        recordings: summary?.recordings ?? dummySummary?.recordings ?? memberRecordings.length,
+        duration: summary?.duration ?? dummySummary?.duration ?? memberRecordings.reduce((acc, r) => acc + r.duration, 0),
+        contacts: summary?.contacts ?? dummySummary?.contacts ?? memberContacts.length,
+        activityLevel: (summary?.activity_level ?? dummySummary?.activityLevel ?? 'medium') as TeamMemberWithActivity['activityLevel'],
+        hasAlert: alerts.some(a => a.userId === member.id && !a.isRead),
+      }
+    })
+  }, [members, dashboardData, alerts])
+
+  // Filter team members
+  const filteredMembers = useMemo(() => {
+    return teamMembersWithActivity.filter((member) => {
+      const matchesSearch = 
+        member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        member.email.toLowerCase().includes(searchQuery.toLowerCase())
+      
+      const matchesStatus = statusFilter === "all" || member.status === statusFilter
+      const matchesActivity = activityFilter === "all" || member.activityLevel === activityFilter
+
+      return matchesSearch && matchesStatus && matchesActivity
+    })
+  }, [teamMembersWithActivity, searchQuery, statusFilter, activityFilter])
 
   // Stats
-  const activeCount = teamMembers.filter(m => m.status === 'active').length
-  const invitedCount = teamMembers.filter(m => m.status === 'invited').length
-  const alertCount = alerts.filter(a => !a.isRead).length
+  const stats = useMemo(() => ({
+    total: members.length,
+    active: members.filter(m => m.status === 'active').length,
+    invited: members.filter(m => m.status === 'invited').length,
+    alertCount: alerts.filter(a => !a.isRead).length,
+  }), [members, alerts])
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Team" subtitle={`${teamMembers.length} team members`} />
+      <Header title="Team" subtitle={`${members.length} team members`} />
       
       <div className="flex-1 p-6 space-y-6 overflow-auto">
+        {/* API Error Banner */}
+        {apiError && (
+          <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <strong>Note:</strong> Unable to load live data. Showing demo data. ({apiError})
+          </div>
+        )}
+
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
@@ -166,7 +212,7 @@ export default function TeamPage() {
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{teamMembers.length}</p>
+                <p className="text-2xl font-bold">{stats.total}</p>
                 <p className="text-sm text-muted">Total Members</p>
               </div>
             </CardContent>
@@ -177,7 +223,7 @@ export default function TeamPage() {
                 <UserCheck className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{activeCount}</p>
+                <p className="text-2xl font-bold">{stats.active}</p>
                 <p className="text-sm text-muted">Active</p>
               </div>
             </CardContent>
@@ -188,7 +234,7 @@ export default function TeamPage() {
                 <UserX className="h-5 w-5 text-amber-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{invitedCount}</p>
+                <p className="text-2xl font-bold">{stats.invited}</p>
                 <p className="text-sm text-muted">Pending Invite</p>
               </div>
             </CardContent>
@@ -199,7 +245,7 @@ export default function TeamPage() {
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{alertCount}</p>
+                <p className="text-2xl font-bold">{stats.alertCount}</p>
                 <p className="text-sm text-muted">Alerts</p>
               </div>
             </CardContent>
@@ -249,17 +295,24 @@ export default function TeamPage() {
           </CardContent>
         </Card>
 
-        {/* Data Table */}
-        <Card>
-          <CardContent className="p-0">
-            <DataTable
-              columns={columns}
-              data={filteredMembers}
-              searchKey="name"
-              pageSize={10}
-            />
-          </CardContent>
-        </Card>
+        {/* Loading State */}
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          /* Data Table */
+          <Card>
+            <CardContent className="p-0">
+              <DataTable
+                columns={columns}
+                data={filteredMembers}
+                searchKey="name"
+                pageSize={10}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

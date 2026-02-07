@@ -8,20 +8,66 @@ import { Button } from "@/components/ui/button"
 import { Select } from "@/components/ui/select"
 import { 
   Mic, Clock, Users, UserCheck, AlertTriangle, TrendingUp, 
-  ChevronRight, Trophy
+  ChevronRight, Trophy, Loader2
 } from "lucide-react"
-import { teamSummary, alerts, recentActivity, weeklyActivity, teamMembers } from "@/data/dummy"
+import { useManagerDashboard, useSubordinates, useApiError } from "@/lib/api/hooks"
+import { transformDashboard, transformAlerts, transformRecentActivities, transformSubordinates } from "@/lib/api/transforms"
+import { 
+  teamSummary as dummyTeamSummary, 
+  alerts as dummyAlerts, 
+  recentActivity as dummyRecentActivity, 
+  weeklyActivity, 
+  teamMembers 
+} from "@/data/dummy"
 import { formatDuration, formatRelativeTime } from "@/lib/utils"
 import Link from "next/link"
+import { useAuth } from "@/lib/auth/context"
 
 export default function DashboardPage() {
+  const { user } = useAuth()
+  
+  // Fetch real data from API
+  const { data: dashboardData, isLoading, error } = useManagerDashboard()
+  const { data: subordinatesData } = useSubordinates()
+  
+  // Transform API data or use dummy data as fallback
+  const teamSummary = dashboardData 
+    ? transformDashboard(dashboardData)
+    : dummyTeamSummary
+  
+  const alerts = dashboardData?.alerts 
+    ? transformAlerts(dashboardData.alerts)
+    : dummyAlerts
+  
+  const recentActivity = dashboardData?.recent_activity
+    ? transformRecentActivities(dashboardData.recent_activity)
+    : dummyRecentActivity
+
   const unreadAlerts = alerts.filter(a => !a.isRead)
+  const apiError = useApiError(error)
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Dashboard" subtitle="Team activity overview" />
+      <Header 
+        title="Dashboard" 
+        subtitle={user?.name ? `Welcome back, ${user.name}` : "Team activity overview"} 
+      />
       
       <div className="flex-1 p-6 space-y-6 overflow-auto">
+        {/* API Error Banner */}
+        {apiError && (
+          <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <strong>Note:</strong> Unable to load live data. Showing demo data. ({apiError})
+          </div>
+        )}
+
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        )}
+
         {/* Period Selector */}
         <div className="flex justify-end">
           <Select
@@ -107,7 +153,7 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="mt-3 text-sm text-muted">
-                2 salespeople inactive today
+                {teamSummary.totalUsers - teamSummary.activeUsers} salespeople inactive today
               </div>
             </CardContent>
           </Card>
@@ -188,6 +234,11 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+              {alerts.length === 0 && (
+                <p className="text-sm text-muted text-center py-4">
+                  No alerts at this time
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Header } from "@/components/layout/header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,8 +10,10 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar } from "@/components/ui/avatar"
 import { DataTable } from "@/components/ui/data-table"
 import { ColumnDef } from "@tanstack/react-table"
-import { Search, Play, ChevronRight, Filter, Download, Mic, Clock, CreditCard } from "lucide-react"
-import { recordings, teamMembers } from "@/data/dummy"
+import { Search, Play, ChevronRight, Download, Mic, Clock, CreditCard, Loader2 } from "lucide-react"
+import { useRecordings, useSubordinates, useApiError } from "@/lib/api/hooks"
+import { transformRecordings, transformSubordinates } from "@/lib/api/transforms"
+import { recordings as dummyRecordings, teamMembers } from "@/data/dummy"
 import { Recording } from "@/types"
 import { formatDuration, formatDate, formatTime } from "@/lib/utils"
 import Link from "next/link"
@@ -102,24 +104,63 @@ export default function RecordingsPage() {
   const [userFilter, setUserFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
 
-  // Filter recordings
-  const filteredRecordings = recordings.filter((recording) => {
-    const matchesSearch = 
-      recording.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (recording.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
-      (recording.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
-    
-    const matchesUser = userFilter === "all" || recording.userId === userFilter
-    const matchesStatus = statusFilter === "all" || recording.status === statusFilter
+  // Fetch real data
+  const { data: recordingsData, isLoading, error } = useRecordings()
+  const { data: subordinatesData } = useSubordinates()
+  const apiError = useApiError(error)
 
-    return matchesSearch && matchesUser && matchesStatus
-  })
+  // Transform or use dummy data
+  const recordings = useMemo(() => {
+    if (recordingsData && recordingsData.length > 0) {
+      return transformRecordings(recordingsData)
+    }
+    return dummyRecordings
+  }, [recordingsData])
+
+  const users = useMemo(() => {
+    if (subordinatesData && subordinatesData.length > 0) {
+      return transformSubordinates(subordinatesData)
+    }
+    return teamMembers
+  }, [subordinatesData])
+
+  // Filter recordings
+  const filteredRecordings = useMemo(() => {
+    return recordings.filter((recording) => {
+      const matchesSearch = 
+        recording.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (recording.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+        (recording.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
+      
+      const matchesUser = userFilter === "all" || recording.userId === userFilter
+      const matchesStatus = statusFilter === "all" || recording.status === statusFilter
+
+      return matchesSearch && matchesUser && matchesStatus
+    })
+  }, [recordings, searchQuery, userFilter, statusFilter])
+
+  // Stats
+  const totalDuration = useMemo(() => 
+    recordings.reduce((acc, r) => acc + r.duration, 0), 
+    [recordings]
+  )
+  const totalBusinessCards = useMemo(() =>
+    recordings.reduce((acc, r) => acc + r.businessCards.length, 0),
+    [recordings]
+  )
 
   return (
     <div className="flex flex-col h-full">
       <Header title="Recordings" subtitle={`${recordings.length} total recordings`} />
       
       <div className="flex-1 p-6 space-y-6 overflow-auto">
+        {/* API Error Banner */}
+        {apiError && (
+          <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <strong>Note:</strong> Unable to load live data. Showing demo data. ({apiError})
+          </div>
+        )}
+
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
@@ -140,7 +181,7 @@ export default function RecordingsPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {formatDuration(recordings.reduce((acc, r) => acc + r.duration, 0))}
+                  {formatDuration(totalDuration)}
                 </p>
                 <p className="text-sm text-muted">Total Duration</p>
               </div>
@@ -152,9 +193,7 @@ export default function RecordingsPage() {
                 <CreditCard className="h-5 w-5 text-accent" />
               </div>
               <div>
-                <p className="text-2xl font-bold">
-                  {recordings.reduce((acc, r) => acc + r.businessCards.length, 0)}
-                </p>
+                <p className="text-2xl font-bold">{totalBusinessCards}</p>
                 <p className="text-sm text-muted">Business Cards</p>
               </div>
             </CardContent>
@@ -177,7 +216,7 @@ export default function RecordingsPage() {
               <Select
                 options={[
                   { value: "all", label: "All Users" },
-                  ...teamMembers.map((u) => ({ value: u.id, label: u.name })),
+                  ...users.map((u) => ({ value: u.id, label: u.name })),
                 ]}
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
@@ -202,17 +241,24 @@ export default function RecordingsPage() {
           </CardContent>
         </Card>
 
-        {/* Data Table */}
-        <Card>
-          <CardContent className="p-0">
-            <DataTable
-              columns={columns}
-              data={filteredRecordings}
-              searchKey="userName"
-              pageSize={15}
-            />
-          </CardContent>
-        </Card>
+        {/* Loading State */}
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          /* Data Table */
+          <Card>
+            <CardContent className="p-0">
+              <DataTable
+                columns={columns}
+                data={filteredRecordings}
+                searchKey="userName"
+                pageSize={15}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

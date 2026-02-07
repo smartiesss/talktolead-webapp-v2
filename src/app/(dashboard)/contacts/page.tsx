@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Header } from "@/components/layout/header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,8 +10,10 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar } from "@/components/ui/avatar"
 import { DataTable } from "@/components/ui/data-table"
 import { ColumnDef } from "@tanstack/react-table"
-import { Search, Plus, Download, ChevronRight, Users, UserPlus, Trophy } from "lucide-react"
-import { contacts, teamMembers } from "@/data/dummy"
+import { Search, Plus, Download, ChevronRight, Users, UserPlus, Trophy, Loader2 } from "lucide-react"
+import { useContacts, useSubordinates, useApiError } from "@/lib/api/hooks"
+import { transformContacts, transformSubordinates } from "@/lib/api/transforms"
+import { contacts as dummyContacts, teamMembers } from "@/data/dummy"
 import { Contact } from "@/types"
 import { formatDate } from "@/lib/utils"
 import Link from "next/link"
@@ -102,29 +104,60 @@ export default function ContactsPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [ownerFilter, setOwnerFilter] = useState("all")
 
-  // Filter contacts
-  const filteredContacts = contacts.filter((contact) => {
-    const matchesSearch = 
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (contact.company?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
-      (contact.email?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
-    
-    const matchesStatus = statusFilter === "all" || contact.status === statusFilter
-    const matchesOwner = ownerFilter === "all" || contact.assignedToUserId === ownerFilter
+  // Fetch real data
+  const { data: contactsData, isLoading, error } = useContacts()
+  const { data: subordinatesData } = useSubordinates()
+  const apiError = useApiError(error)
 
-    return matchesSearch && matchesStatus && matchesOwner
-  })
+  // Transform or use dummy data
+  const contacts = useMemo(() => {
+    if (contactsData && contactsData.length > 0) {
+      return transformContacts(contactsData)
+    }
+    return dummyContacts
+  }, [contactsData])
+
+  const users = useMemo(() => {
+    if (subordinatesData && subordinatesData.length > 0) {
+      return transformSubordinates(subordinatesData)
+    }
+    return teamMembers
+  }, [subordinatesData])
+
+  // Filter contacts
+  const filteredContacts = useMemo(() => {
+    return contacts.filter((contact) => {
+      const matchesSearch = 
+        contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (contact.company?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+        (contact.email?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
+      
+      const matchesStatus = statusFilter === "all" || contact.status === statusFilter
+      const matchesOwner = ownerFilter === "all" || contact.assignedToUserId === ownerFilter
+
+      return matchesSearch && matchesStatus && matchesOwner
+    })
+  }, [contacts, searchQuery, statusFilter, ownerFilter])
 
   // Stats
-  const newLeads = contacts.filter(c => c.status === 'new').length
-  const qualified = contacts.filter(c => c.status === 'qualified').length
-  const won = contacts.filter(c => c.status === 'won').length
+  const stats = useMemo(() => ({
+    newLeads: contacts.filter(c => c.status === 'new').length,
+    qualified: contacts.filter(c => c.status === 'qualified').length,
+    won: contacts.filter(c => c.status === 'won').length,
+  }), [contacts])
 
   return (
     <div className="flex flex-col h-full">
       <Header title="Contacts" subtitle={`${contacts.length} total contacts`} />
       
       <div className="flex-1 p-6 space-y-6 overflow-auto">
+        {/* API Error Banner */}
+        {apiError && (
+          <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <strong>Note:</strong> Unable to load live data. Showing demo data. ({apiError})
+          </div>
+        )}
+
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
@@ -133,7 +166,7 @@ export default function ContactsPage() {
                 <UserPlus className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{newLeads}</p>
+                <p className="text-2xl font-bold">{stats.newLeads}</p>
                 <p className="text-sm text-muted">New Leads</p>
               </div>
             </CardContent>
@@ -144,7 +177,7 @@ export default function ContactsPage() {
                 <Users className="h-5 w-5 text-secondary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{qualified}</p>
+                <p className="text-2xl font-bold">{stats.qualified}</p>
                 <p className="text-sm text-muted">Qualified</p>
               </div>
             </CardContent>
@@ -155,7 +188,7 @@ export default function ContactsPage() {
                 <Trophy className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{won}</p>
+                <p className="text-2xl font-bold">{stats.won}</p>
                 <p className="text-sm text-muted">Won</p>
               </div>
             </CardContent>
@@ -192,7 +225,7 @@ export default function ContactsPage() {
               <Select
                 options={[
                   { value: "all", label: "All Owners" },
-                  ...teamMembers.map((u) => ({ value: u.id, label: u.name })),
+                  ...users.map((u) => ({ value: u.id, label: u.name })),
                 ]}
                 value={ownerFilter}
                 onChange={(e) => setOwnerFilter(e.target.value)}
@@ -210,17 +243,24 @@ export default function ContactsPage() {
           </CardContent>
         </Card>
 
-        {/* Data Table */}
-        <Card>
-          <CardContent className="p-0">
-            <DataTable
-              columns={columns}
-              data={filteredContacts}
-              searchKey="name"
-              pageSize={15}
-            />
-          </CardContent>
-        </Card>
+        {/* Loading State */}
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          /* Data Table */
+          <Card>
+            <CardContent className="p-0">
+              <DataTable
+                columns={columns}
+                data={filteredContacts}
+                searchKey="name"
+                pageSize={15}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )
