@@ -56,8 +56,8 @@ export default function LoginPage() {
   // Demo login for testing
   const handleDemoLogin = async () => {
     setEmail("demo@talktolead.ai")
-    setPassword("demo123")
-    setError("Demo mode: Use these credentials or connect to your backend")
+    setPassword("demo")
+    setError("Demo mode: Use these credentials to explore the app")
   }
 
   // Show loading while checking auth state

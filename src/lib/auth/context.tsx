@@ -100,6 +100,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState(prev => ({ ...prev, isLoading: true }))
 
     try {
+      // Demo mode for testing - check for demo credentials
+      if (credentials.email === 'demo@talktolead.ai' && credentials.password === 'demo') {
+        // Simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        // Use demo user data
+        const demoUser: AuthUser = {
+          id: 'demo_manager_001',
+          email: 'demo@talktolead.ai',
+          display_name: 'Demo Manager',
+          role: 'manager',
+          organization_id: 'demo_org_001',
+          token_balance: 1000
+        }
+        
+        // Set a fake token
+        setAuthToken('demo_token_123')
+        localStorage.setItem(USER_KEY, JSON.stringify(demoUser))
+
+        setState({
+          user: { ...demoUser, name: demoUser.display_name || demoUser.email },
+          isLoading: false,
+          isAuthenticated: true,
+        })
+
+        router.push('/dashboard')
+        return
+      }
+
+      // Real authentication
       const response = await api.post<LoginResponse>(
         ENDPOINTS.AUTH.LOGIN, 
         credentials,
