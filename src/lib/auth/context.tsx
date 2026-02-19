@@ -40,6 +40,7 @@ interface LoginResponse {
 interface AuthContextValue extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>
   loginWithGoogle: (idToken: string) => Promise<void>
+  loginWithLine: (code: string, redirectUri: string) => Promise<void>
   logout: () => void
   refreshUser: () => Promise<void>
 }
@@ -188,6 +189,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [router])
 
+  const loginWithLine = useCallback(async (code: string, redirectUri: string) => {
+    setState(prev => ({ ...prev, isLoading: true }))
+
+    try {
+      const response = await api.post<LoginResponse & { user?: { uid: string; username: string; provider: string } }>(
+        '/auth/line/token',
+        { code, redirect_uri: redirectUri },
+        { skipAuth: true }
+      )
+
+      if (response.access_token) {
+        setAuthToken(response.access_token)
+
+        // Use LINE user info from response
+        const lineUser = response.user
+        const user: AuthUser = {
+          id: lineUser?.uid || '',
+          email: '', // LINE doesn't provide email
+          display_name: lineUser?.username || 'LINE User',
+          role: 'user',
+        }
+        localStorage.setItem(USER_KEY, JSON.stringify(user))
+
+        setState({
+          user: { ...user, name: user.display_name || 'LINE User' },
+          isLoading: false,
+          isAuthenticated: true,
+        })
+
+        router.push('/dashboard')
+      }
+    } catch (error) {
+      setState(prev => ({ ...prev, isLoading: false }))
+      throw error
+    }
+  }, [router])
+
   const logout = useCallback(() => {
     clearAuthToken()
     localStorage.removeItem(USER_KEY)
@@ -212,6 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ...state,
     login,
     loginWithGoogle,
+    loginWithLine,
     logout,
     refreshUser,
   }
