@@ -44,6 +44,9 @@ export const ENDPOINTS = {
     SUBORDINATES: '/api/manager/subordinates',
     SUBORDINATE_RECORDINGS: (id: string) => `/api/manager/subordinates/${id}/recordings`,
     TEAM_SUMMARY: '/api/manager/team-summary',
+    ALERTS: '/api/manager/alerts',
+    ALERT_READ: (id: string) => `/api/manager/alerts/${id}/read`,
+    ALERTS_READ_ALL: '/api/manager/alerts/read-all',
   },
 
   // OCR

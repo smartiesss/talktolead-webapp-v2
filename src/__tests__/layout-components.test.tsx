@@ -57,6 +57,17 @@ jest.mock('@/lib/auth/context', () => ({
 }))
 
 // ---------------------------------------------------------------------------
+// Mock useAlerts (used by Sidebar for unread badge)
+// ---------------------------------------------------------------------------
+jest.mock('@/lib/api/hooks', () => ({
+  useAlerts: () => ({ data: undefined }),
+}))
+
+jest.mock('@/lib/api/transforms', () => ({
+  transformAlerts: (alerts: unknown[]) => alerts,
+}))
+
+// ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
 function renderSidebar() {

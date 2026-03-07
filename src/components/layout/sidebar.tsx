@@ -4,6 +4,9 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth/context"
+import { useAlerts } from "@/lib/api/hooks"
+import { transformAlerts } from "@/lib/api/transforms"
+import { alerts as dummyAlerts } from "@/data/dummy"
 import {
   LayoutDashboard,
   Mic,
@@ -13,6 +16,7 @@ import {
   Settings,
   Headphones,
   LogOut,
+  Bell,
 } from "lucide-react"
 
 const navigation = [
@@ -20,6 +24,7 @@ const navigation = [
   { name: "Recordings", href: "/recordings", icon: Mic },
   { name: "Contacts", href: "/contacts", icon: Users },
   { name: "Team", href: "/team", icon: UserCircle },
+  { name: "Alerts", href: "/alerts", icon: Bell, managerOnly: true },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ]
@@ -27,6 +32,10 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
+  const { data: apiAlerts } = useAlerts()
+
+  const allAlerts = apiAlerts ? transformAlerts(apiAlerts) : dummyAlerts
+  const unreadCount = allAlerts.filter((a) => !a.isRead).length
 
   // Get user initials
   const getInitials = (name?: string | null, email?: string | null) => {
@@ -52,6 +61,8 @@ export function Sidebar() {
     return labels[role || ''] || 'User'
   }
 
+  const isManagerOrAdmin = user?.role === 'manager' || user?.role === 'admin'
+
   return (
     <div className="flex h-full w-64 flex-col bg-white border-r border-border">
       {/* Logo */}
@@ -65,11 +76,17 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => {
+          // Hide manager-only items from non-managers
+          if (item.managerOnly && !isManagerOrAdmin) return null
+
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+          const showBadge = item.name === "Alerts" && unreadCount > 0
+
           return (
             <Link
               key={item.name}
               href={item.href}
+              data-testid={`nav-${item.name.toLowerCase()}`}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
@@ -78,7 +95,15 @@ export function Sidebar() {
               )}
             >
               <item.icon className="h-5 w-5" />
-              {item.name}
+              <span className="flex-1">{item.name}</span>
+              {showBadge && (
+                <span
+                  data-testid="alerts-unread-badge"
+                  className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white"
+                >
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </Link>
           )
         })}

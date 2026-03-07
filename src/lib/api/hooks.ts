@@ -322,6 +322,45 @@ export function useTeamSummary() {
 }
 
 // =============================================================================
+// Manager Alerts
+// =============================================================================
+
+export const alertQueryKeys = {
+  all: ['alerts'] as const,
+  lists: () => [...alertQueryKeys.all, 'list'] as const,
+}
+
+export function useAlerts() {
+  return useQuery({
+    queryKey: alertQueryKeys.lists(),
+    queryFn: () => api.get<ApiAlert[]>(ENDPOINTS.MANAGER.ALERTS),
+    staleTime: 30 * 1000, // 30 seconds — alerts should refresh frequently
+  })
+}
+
+export function useMarkAlertRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.patch<void>(ENDPOINTS.MANAGER.ALERT_READ(id)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: alertQueryKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
+export function useMarkAllAlertsRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<void>(ENDPOINTS.MANAGER.ALERTS_READ_ALL),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: alertQueryKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+    },
+  })
+}
+
+// =============================================================================
 // Utility hook for error handling
 // =============================================================================
 
