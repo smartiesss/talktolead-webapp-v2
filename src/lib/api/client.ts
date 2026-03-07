@@ -1,4 +1,4 @@
-import { API_CONFIG, AUTH_TOKEN_KEY } from './config'
+import { API_CONFIG, AUTH_TOKEN_KEY, SESSION_COOKIE_NAME } from './config'
 
 export type ApiError = {
   message: string
@@ -37,20 +37,26 @@ function getAuthToken(): string | null {
 }
 
 /**
- * Set the auth token in localStorage
+ * Set the auth token in localStorage and mirror a session indicator cookie
+ * for server-side middleware auth checks.
  */
 export function setAuthToken(token: string): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(AUTH_TOKEN_KEY, token)
+    // Mirror session presence as a cookie (not the JWT itself) so that
+    // Next.js Edge middleware can detect authenticated state server-side.
+    document.cookie = `${SESSION_COOKIE_NAME}=1; path=/; SameSite=Lax; max-age=86400`
   }
 }
 
 /**
- * Clear the auth token from localStorage
+ * Clear the auth token from localStorage and expire the session cookie.
  */
 export function clearAuthToken(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(AUTH_TOKEN_KEY)
+    // Expire the session indicator cookie
+    document.cookie = `${SESSION_COOKIE_NAME}=; path=/; SameSite=Lax; max-age=0`
   }
 }
 

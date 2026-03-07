@@ -8,3 +8,6 @@ export const API_CONFIG = {
 export const AUTH_TOKEN_KEY = 'talktolead_auth_token'
 export const REFRESH_TOKEN_KEY = 'talktolead_refresh_token'
 export const USER_KEY = 'talktolead_user'
+
+// Session presence cookie — readable by Edge middleware (not the JWT itself)
+export const SESSION_COOKIE_NAME = 'talktolead_session'
