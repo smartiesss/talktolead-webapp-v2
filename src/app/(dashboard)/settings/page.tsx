@@ -8,11 +8,19 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar } from "@/components/ui/avatar"
 import { 
   User, Building2, Users, Bell, Shield, CreditCard,
-  Mail, Plus, Trash2, Settings2, ExternalLink
+  Plus, Trash2, ExternalLink, AlertCircle, Loader2
 } from "lucide-react"
-import { currentUser, teamMembers } from "@/data/dummy"
+import { useAuth } from "@/lib/auth/context"
+import { useSubordinates } from "@/lib/api/hooks"
 
 export default function SettingsPage() {
+  const { user } = useAuth()
+  const { data: subordinates, isLoading: isLoadingTeam, error: teamError } = useSubordinates()
+
+  const displayName = user?.display_name || user?.name || user?.email || 'User'
+  const email = user?.email || ''
+  const role = user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'User'
+
   return (
     <div className="flex flex-col h-full">
       <Header title="Settings" subtitle="Manage your account and team" />
@@ -29,7 +37,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center gap-6">
-              <Avatar name={currentUser.name} size="lg" className="h-20 w-20 text-2xl" />
+              <Avatar name={displayName} size="lg" className="h-20 w-20 text-2xl" />
               <div>
                 <Button variant="outline" size="sm">Change Photo</Button>
                 <p className="text-xs text-muted mt-2">JPG, PNG or GIF. Max 2MB.</p>
@@ -39,15 +47,15 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Full Name</label>
-                <Input defaultValue={currentUser.name} />
+                <Input defaultValue={displayName} data-testid="name-input" />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Email</label>
-                <Input defaultValue={currentUser.email} type="email" />
+                <Input defaultValue={email} type="email" data-testid="email-input" />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Role</label>
-                <Input defaultValue="Manager" disabled />
+                <Input defaultValue={role} disabled data-testid="role-input" />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Phone</label>
@@ -91,15 +99,36 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium text-foreground">Current Plan</p>
-                  <p className="text-sm text-muted">Pro Plan - 25 users, unlimited recordings</p>
+                  <p className="text-sm text-muted">
+                    {user?.subscription_tier 
+                      ? `${user.subscription_tier} Plan`
+                      : 'Pro Plan — 25 users, unlimited recordings'
+                    }
+                  </p>
                 </div>
-                <Badge variant="info">Pro</Badge>
+                <Badge variant="info" data-testid="plan-badge">
+                  {user?.subscription_tier ?? 'Pro'}
+                </Badge>
               </div>
               <Button variant="outline" size="sm" className="mt-3">
                 <CreditCard className="h-4 w-4 mr-2" />
                 Manage Subscription
               </Button>
             </div>
+
+            {typeof user?.token_balance === 'number' && (
+              <div className="p-4 border border-border rounded-lg" data-testid="token-balance">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-foreground">Token Balance</p>
+                    <p className="text-sm text-muted">API tokens remaining this billing period</p>
+                  </div>
+                  <span className="text-2xl font-bold text-foreground">
+                    {user.token_balance.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -121,40 +150,64 @@ export default function SettingsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {teamMembers.slice(0, 5).map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-border"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar name={member.name} size="sm" />
-                    <div>
-                      <p className="font-medium text-foreground">{member.name}</p>
-                      <p className="text-xs text-muted">{member.email}</p>
+            {isLoadingTeam && (
+              <div className="flex items-center justify-center py-8" data-testid="team-loading">
+                <Loader2 className="h-6 w-6 animate-spin text-muted" />
+              </div>
+            )}
+
+            {teamError && (
+              <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 rounded-lg" data-testid="team-error">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                Failed to load team members
+              </div>
+            )}
+
+            {!isLoadingTeam && !teamError && (
+              <div className="space-y-3">
+                {(subordinates ?? []).slice(0, 5).map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border"
+                    data-testid="team-member-row"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar name={member.display_name ?? member.email} size="sm" />
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {member.display_name ?? member.email}
+                        </p>
+                        <p className="text-xs text-muted">{member.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge 
+                        variant={member.status === 'active' ? 'success' : 'warning'}
+                      >
+                        {member.status}
+                      </Badge>
+                      <Badge variant="outline" className="capitalize">
+                        {member.role}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="text-muted hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge 
-                      variant={member.status === 'active' ? 'success' : 'warning'}
-                    >
-                      {member.status}
-                    </Badge>
-                    <Badge variant="outline" className="capitalize">
-                      {member.role}
-                    </Badge>
-                    <Button variant="ghost" size="icon" className="text-muted hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            {teamMembers.length > 5 && (
-              <Button variant="link" className="mt-4 w-full">
-                View all {teamMembers.length} members
-              </Button>
+                ))}
+
+                {!subordinates || subordinates.length === 0 ? (
+                  <p className="text-sm text-muted text-center py-6" data-testid="team-empty">
+                    No team members yet. Invite your first member!
+                  </p>
+                ) : null}
+
+                {subordinates && subordinates.length > 5 && (
+                  <Button variant="link" className="mt-4 w-full" data-testid="view-all-members">
+                    View all {subordinates.length} members
+                  </Button>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>

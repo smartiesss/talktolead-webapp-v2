@@ -474,10 +474,48 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Invite Member')).toBeInTheDocument()
   })
 
-  it('renders dummy team members list (up to 5)', () => {
+  it('shows empty state when no team members', () => {
+    mockUseSubordinates.mockReturnValue(noData({ data: [] }))
     render(<SettingsPage />)
-    // Dummy data has David Liu as first member
-    expect(screen.getByText('David Liu')).toBeInTheDocument()
+    expect(screen.getByTestId('team-empty')).toBeInTheDocument()
+    expect(screen.getByText(/No team members yet/)).toBeInTheDocument()
+  })
+
+  it('shows team loading spinner', () => {
+    mockUseSubordinates.mockReturnValue(loading())
+    render(<SettingsPage />)
+    expect(screen.getByTestId('team-loading')).toBeInTheDocument()
+  })
+
+  it('shows team error message on API failure', () => {
+    mockUseSubordinates.mockReturnValue(withError())
+    render(<SettingsPage />)
+    expect(screen.getByTestId('team-error')).toBeInTheDocument()
+    expect(screen.getByText('Failed to load team members')).toBeInTheDocument()
+  })
+
+  it('renders real team members from API', () => {
+    mockUseSubordinates.mockReturnValue(noData({
+      data: [
+        { id: 1, uuid: 'u1', email: 'alice@test.com', display_name: 'Alice Wong', role: 'user', status: 'active', created_at: '2026-01-01' },
+        { id: 2, uuid: 'u2', email: 'bob@test.com', display_name: 'Bob Chan', role: 'user', status: 'invited', created_at: '2026-01-02' },
+      ]
+    }))
+    render(<SettingsPage />)
+    expect(screen.getByText('Alice Wong')).toBeInTheDocument()
+    expect(screen.getByText('Bob Chan')).toBeInTheDocument()
+    expect(screen.getAllByTestId('team-member-row')).toHaveLength(2)
+  })
+
+  it('shows "View all" link when more than 5 members', () => {
+    const manyMembers = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1, uuid: `u${i}`, email: `user${i}@test.com`, display_name: `User ${i}`,
+      role: 'user', status: 'active' as const, created_at: '2026-01-01'
+    }))
+    mockUseSubordinates.mockReturnValue(noData({ data: manyMembers }))
+    render(<SettingsPage />)
+    expect(screen.getByTestId('view-all-members')).toBeInTheDocument()
+    expect(screen.getByText('View all 8 members')).toBeInTheDocument()
   })
 
   it('renders Notifications section', () => {
@@ -533,5 +571,42 @@ describe('SettingsPage', () => {
     render(<SettingsPage />)
     const checkboxes = document.querySelectorAll('input[type="checkbox"]')
     expect((checkboxes[2] as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('populates name field from useAuth user', () => {
+    mockAuthUser = { name: 'Jane Doe', email: 'jane@example.com', role: 'manager' }
+    render(<SettingsPage />)
+    const nameInput = screen.getByTestId('name-input') as HTMLInputElement
+    expect(nameInput.defaultValue).toBe('Jane Doe')
+  })
+
+  it('populates email field from useAuth user', () => {
+    mockAuthUser = { name: 'Jane Doe', email: 'jane@example.com', role: 'manager' }
+    render(<SettingsPage />)
+    const emailInput = screen.getByTestId('email-input') as HTMLInputElement
+    expect(emailInput.defaultValue).toBe('jane@example.com')
+  })
+
+  it('shows capitalized role in role field', () => {
+    mockAuthUser = { name: 'Jane Doe', email: 'jane@example.com', role: 'manager' }
+    render(<SettingsPage />)
+    const roleInput = screen.getByTestId('role-input') as HTMLInputElement
+    expect(roleInput.defaultValue).toBe('Manager')
+  })
+
+  it('falls back to email as display name when no name', () => {
+    mockAuthUser = { name: '', email: 'anon@example.com', role: 'user' }
+    render(<SettingsPage />)
+    const nameInput = screen.getByTestId('name-input') as HTMLInputElement
+    expect(nameInput.defaultValue).toBe('anon@example.com')
+  })
+
+  it('shows token balance when user has token_balance', () => {
+    // Need to patch useAuth to include token_balance
+    // The mock returns mockAuthUser which doesn't have token_balance in type, but we can cast
+    ;(mockAuthUser as unknown as Record<string, unknown>)['token_balance'] = 12500
+    render(<SettingsPage />)
+    expect(screen.getByTestId('token-balance')).toBeInTheDocument()
+    expect(screen.getByText('12,500')).toBeInTheDocument()
   })
 })
