@@ -16,6 +16,7 @@ import { transformRecordings, transformSubordinates } from "@/lib/api/transforms
 import { recordings as dummyRecordings, teamMembers } from "@/data/dummy"
 import { Recording } from "@/types"
 import { formatDuration, formatDate, formatTime } from "@/lib/utils"
+import { useToast } from "@/lib/hooks/use-toast"
 import Link from "next/link"
 
 const columns: ColumnDef<Recording>[] = [
@@ -103,6 +104,7 @@ export default function RecordingsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [userFilter, setUserFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const { success: toastSuccess, error: toastError } = useToast()
 
   // Fetch real data
   const { data: recordingsData, isLoading, error } = useRecordings()
@@ -233,7 +235,33 @@ export default function RecordingsPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full md:w-40"
               />
-              <Button variant="outline">
+              <Button
+                variant="outline"
+                data-testid="recordings-export-btn"
+                onClick={() => {
+                  try {
+                    if (filteredRecordings.length === 0) {
+                      toastError("Nothing to export", "No recordings match the current filters.")
+                      return
+                    }
+                    const header = "ID,User,Date,Duration,Status,Contact\n"
+                    const rows = filteredRecordings.map((r) =>
+                      [r.id, r.userName, r.recordedAt, r.duration, r.status, r.contactName || ""].join(",")
+                    )
+                    const csv = header + rows.join("\n")
+                    const blob = new Blob([csv], { type: "text/csv" })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement("a")
+                    a.href = url
+                    a.download = `recordings-${new Date().toISOString().slice(0, 10)}.csv`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                    toastSuccess("Export complete", `${filteredRecordings.length} recordings exported.`)
+                  } catch {
+                    toastError("Export failed", "Could not generate CSV file.")
+                  }
+                }}
+              >
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
